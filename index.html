@@ -106,6 +106,17 @@ kbd{font:500 11px/1 var(--font-ui);padding:3px 6px;border-radius:5px;border:1px 
 .made-by{display:flex;flex-direction:column;align-items:center;gap:2px;margin-top:40px;padding-top:18px;border-top:1px solid var(--ivory-300);font-size:12.5px;color:var(--ink-600);text-align:center}
 .made-by b{font-weight:600;color:var(--ink-900)}
 .made-mail{font-size:12px;color:var(--ink-600);user-select:all;letter-spacing:.01em}
+.nudge{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:14px 16px;margin-bottom:18px;border:1px solid #E6CF9F;background:#FBF3E1;border-radius:16px}
+.nudge-t{flex:1 1 280px;min-width:0;display:flex;flex-direction:column;gap:2px}
+.nudge-t b{font-size:14px;color:var(--ink-900)}
+.nudge-t small{font-size:12.5px;color:var(--ink-600);line-height:1.45}
+.nudge-a{display:flex;gap:8px;flex-wrap:wrap}
+.store-info{display:flex;flex-direction:column;gap:10px;font-size:13.5px;line-height:1.55;color:var(--ink-700)}
+.store-info p,.store-info ul{margin:0}
+.store-info ul{padding-left:20px;display:flex;flex-direction:column;gap:3px}
+.store-info b{color:var(--ink-900)}
+.link-btn{background:none;border:0;padding:0;font:inherit;color:var(--emerald-600,#0F7A55);text-decoration:underline;text-underline-offset:2px;cursor:pointer}
+.lb{display:block;margin-top:3px;font-weight:600;color:var(--ink-700)}
 .made-copy{font-size:11px;color:var(--ink-600);opacity:.8;margin-top:4px}
 [data-embedded] [data-kind="print"],[data-embedded] .kbd-print{display:none!important}
 .collapse-btn{display:flex;align-items:center;gap:12px;height:36px;padding:0 12px;border-radius:9px;color:#7E8AA0;font-size:13px;white-space:nowrap}
@@ -2378,7 +2389,7 @@ function viewDashboard() {
       <div class="setup-top"><span class="ticon tone-emerald">${ic('sparkle')}</span><div><h3>Letterhead ready</h3><p>Work faster with the keyboard.</p></div></div>
       <div class="kbd-list"><div>Search anything <span><kbd>${MOD}</kbd> <kbd>K</kbd></span></div><div>New document <kbd>N</kbd></div><div>Save now <span><kbd>${MOD}</kbd> <kbd>S</kbd></span></div><div class="kbd-print">Print current document <span><kbd>${MOD}</kbd> <kbd>P</kbd></span></div><div>All shortcuts <kbd>?</kbd></div></div>
     </div>`;
-  const html = `
+  const html = `${backupNudge()}
   <section class="hero">
     <div class="hero-main">
       <div class="eyebrow">${new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</div>
@@ -2772,8 +2783,8 @@ function viewFirm() {
         <div class="grid2">${s.fields.map(fl => fieldHTML({ ...fl, key: fl.key }, f[fl.key], '')).join('')}</div>
       </section>`).join('')}
       <section class="card panel danger-zone">
-        <div class="panel-h"><span class="ticon tone-plum">${ic('database')}</span><div><h3>Data &amp; privacy</h3><p>Everything stays in this browser — nothing is uploaded. Keep a backup.</p></div></div>
-        <div class="dz-row"><div><b>Download backup</b><small>Firm profile, clients, documents and custom templates as JSON.</small></div><button class="btn btn-ghost sm" data-act="backup">${ic('download', 'sm')}Backup</button></div>
+        <div class="panel-h"><span class="ticon tone-plum">${ic('database')}</span><div><h3>Data &amp; privacy</h3><p>Everything is saved only in this browser on this device. Nothing is uploaded, and clearing browsing data deletes it. <button class="link-btn" data-act="storage-info">How storage works</button></p></div></div>
+        <div class="dz-row"><div><b>Download backup</b><small>Firm profile, clients, documents and custom templates as JSON. <span id="last-backup" class="lb">${esc(lastBackupText())}</span></small></div><button class="btn btn-ghost sm" data-act="backup">${ic('download', 'sm')}Backup</button></div>
         <div class="dz-row"><div><b>Restore from backup</b><small>Replaces the data in this browser.</small></div><label class="btn btn-ghost sm" tabindex="0" role="button">${ic('upload', 'sm')}Restore<input type="file" accept="application/json,.json" id="restore-in" hidden></label></div>
         <div class="dz-row"><div><b>Clear firm profile</b><small>Resets letterhead and signatory details only.</small></div><button class="btn btn-ghost sm" data-act="clear-firm">${ic('reset', 'sm')}Clear</button></div>
         <div class="dz-row"><div><b>Reset everything</b><small>Permanently deletes all local AuditDesk data.</small></div><button class="btn btn-danger sm" data-act="reset-all">${ic('trash', 'sm')}Reset</button></div>
@@ -2829,6 +2840,56 @@ function readLogo(file) {
     fr.readAsDataURL(file);
   });
 }
+/* ---------- Backup reminders & storage notice ---------- */
+const BACKUP_EVERY_DAYS = 14;
+function hasUserData() { return state.drafts.length || state.clients.length || state.custom.length || has(state.firm.name); }
+function lastBackupText() {
+  if (!state.backupAt) return 'Never backed up';
+  const days = Math.floor((Date.now() - state.backupAt) / 864e5);
+  return `Last backup: ${days < 1 ? 'today' : days === 1 ? 'yesterday' : days + ' days ago'} (${fmtDate(new Date(state.backupAt).toISOString().slice(0, 10))})`;
+}
+function backupDue() {
+  if (!hasUserData() || (state.ui.backupSnooze || 0) > Date.now()) return false;
+  return !state.backupAt || Date.now() - state.backupAt >= BACKUP_EVERY_DAYS * 864e5;
+}
+function backupNudge() {
+  if (!backupDue()) return '';
+  const n = state.drafts.length, c = state.clients.length;
+  const what = [has(state.firm.name) ? 'your firm profile' : '', c ? `${c} client${c > 1 ? 's' : ''}` : '', n ? `${n} document${n > 1 ? 's' : ''}` : ''].filter(Boolean).join(', ').replace(/, ([^,]*)$/, ' and $1');
+  return `<section class="nudge" id="backup-nudge" role="status">
+    <span class="ticon tone-gold">${ic('database')}</span>
+    <div class="nudge-t"><b>${state.backupAt ? `It has been ${Math.floor((Date.now() - state.backupAt) / 864e5)} days since your last backup` : 'You have not backed up your data yet'}</b>
+    <small>${esc(what.charAt(0).toUpperCase() + what.slice(1))} ${what.includes(' and ') || n > 1 || c > 1 ? 'are' : 'is'} stored only in this browser. Clearing browsing data or changing computers deletes ${what.includes(' and ') || n > 1 || c > 1 ? 'them' : 'it'}.</small></div>
+    <div class="nudge-a"><button class="btn btn-ghost sm" data-act="backup-snooze">Remind me in 7 days</button><button class="btn btn-dark sm" data-act="backup">${ic('download', 'sm')}Download backup</button></div>
+  </section>`;
+}
+function markBackedUp() {
+  state.backupAt = Date.now(); state.ui.backupSnooze = 0; persist();
+  const n = $('#backup-nudge'); if (n) n.remove();
+  const l = $('#last-backup'); if (l) l.textContent = lastBackupText();
+}
+function showStorageInfo(first) {
+  return openModal({
+    title: first ? 'Before you start: where your work is saved' : 'How your data is stored',
+    body: `<div class="store-info">
+      <p><b>Saved automatically, in this browser only.</b> Your firm profile, logo, clients, documents and templates are kept on this device, in this browser. Nothing is uploaded to any server, and the author cannot see or recover your data.</p>
+      <p><b>Your data will be deleted if you:</b></p>
+      <ul>
+        <li>clear browsing data with <i>Cookies and site data</i> selected</li>
+        <li>use a private or incognito window (everything is erased when it closes)</li>
+        <li>reset or reinstall the browser, or change computers</li>
+        <li>click <i>Reset everything</i> in Firm profile</li>
+      </ul>
+      <p><b>Other browsers and devices do not share it.</b> Work in Chrome will not appear in Edge, on another computer or on your phone.</p>
+      <p><b>Keep a backup.</b> Use <i>Firm profile → Download backup</i> regularly and store the file safely. <i>Restore from backup</i> brings everything back on any browser. AuditDesk will remind you every ${BACKUP_EVERY_DAYS} days.</p>
+    </div>`,
+    actions: [{ label: first ? 'I understand' : 'Close', kind: 'btn-primary', value: true }]
+  }).then(v => {
+    if (first) { state.ui.storageAck = true; persist(); }
+    try { navigator.storage && navigator.storage.persist && navigator.storage.persist().catch(() => {}); } catch (e) {}
+    return v;
+  });
+}
 function restoreBackup(file) {
   const fr = new FileReader();
   fr.onload = async () => {
@@ -2838,7 +2899,9 @@ function restoreBackup(file) {
     const ok = await confirmDialog({ title: 'Restore this backup?', body: `It contains ${data.drafts.length} document(s) and ${(data.clients || []).length} client(s), and will replace everything currently in this browser.`, confirm: 'Replace & restore', danger: true });
     if (!ok) return;
     const d = defaultState();
-    state = { ...d, ...data, firm: { ...d.firm, ...data.firm }, clients: data.clients || [], custom: data.custom || [], ui: { ...d.ui, ...(data.ui || {}) } };
+    state = { ...d, ...data, firm: { ...d.firm, ...data.firm }, clients: data.clients || [], custom: data.custom || [], ui: { ...d.ui, ...(data.ui || {}), storageAck: true } };
+    /* the restored data equals the backup file, so it counts as backed up as of that file */
+    state.backupAt = data.exportedAt ? Date.parse(data.exportedAt) || Date.now() : Date.now();
     persist(); updateChrome(); route();
     toast('Your data has been restored.', { title: 'Backup restored' });
   };
@@ -3177,7 +3240,7 @@ const ACT = {
   'backup': () => {
     const blob = new Blob([JSON.stringify({ ...state, exportedAt: new Date().toISOString(), app: 'CA AuditDesk' }, null, 2)], { type: 'application/json' });
     download(blob, `AuditDesk-backup-${todayISO()}.json`)
-      .then(() => toast('Store it somewhere safe — you can restore it on any browser.', { title: 'Backup downloaded' }))
+      .then(() => { markBackedUp(); toast('Store it somewhere safe, such as your email or a cloud drive. You can restore it on any browser.', { title: 'Backup downloaded' }); })
       .catch(e => toast(e.declined ? 'Nothing was saved.' : e.message, { type: e.declined ? 'info' : 'error', title: e.declined ? 'Backup cancelled' : 'Backup failed' }));
   },
   'clear-firm': async () => {
@@ -3186,8 +3249,14 @@ const ACT = {
     state.firm = defaultState().firm; persist(); updateChrome(); route();
     toast('Firm profile cleared.', { title: 'Cleared' });
   },
+  'backup-snooze': () => {
+    state.ui.backupSnooze = Date.now() + 7 * 864e5; persist();
+    const n = $('#backup-nudge'); if (n) n.remove();
+    toast('We will remind you again in 7 days.', { type: 'info', title: 'Reminder snoozed' });
+  },
+  'storage-info': () => showStorageInfo(false),
   'reset-all': async () => {
-    const ok = await confirmDialog({ title: 'Reset everything?', body: 'This permanently deletes your firm profile, clients, documents and custom templates from this browser. Download a backup first if you may need them.', confirm: 'Delete all data', danger: true });
+    const ok = await confirmDialog({ title: 'Reset everything?', body: `This permanently deletes your firm profile, ${state.clients.length} client(s), ${state.drafts.length} document(s) and ${state.custom.length} custom template(s) from this browser. It cannot be undone. ${esc(lastBackupText())}. Download a backup first if you may need them.`, confirm: 'Delete all data', danger: true });
     if (!ok) return;
     state = defaultState();
     try { localStorage.removeItem(STORE_KEY); } catch (e) {}
@@ -3310,6 +3379,7 @@ setInterval(() => { const el = $('#save-state'); if (el && el.textContent.starts
 applyCollapse();
 route();
 if (!storageOK) toast('Changes will not persist after you close this tab.', { type: 'error', title: 'Browser storage unavailable', timeout: 8000 });
+else if (!state.ui.storageAck) setTimeout(() => showStorageInfo(true), 400);
 if (document.fonts) {
   Promise.all(['400 15px Tinos', '700 15px Tinos', 'italic 400 15px Tinos'].map(f => document.fonts.load(f).catch(() => {}))).then(() => fontsReady()).then(() => { if (PV.host) PV.render(); });
 }
